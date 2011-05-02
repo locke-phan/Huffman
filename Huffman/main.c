@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <dispatch/dispatch.h>
 
 void * allocate ( size_t size ) {
     void *space = malloc(size);
@@ -272,29 +273,63 @@ ssize_t read_file_to_buffer ( char *path, void *buffer, size_t filesize ) {
 
 int main (int argc, const char * argv[])
 {
-        char *filepath = "/Users/tienloc47/test.txt";
+    //   char *filepath = "/Users/tienloc47/test.txt";
     //    char *filepath = "/Users/tienloc47/sample_large_text_file.txt";
     //    char *filepath = "/Users/tienloc47/movie.avi";
-    //    char *filepath = "/Users/tienloc47/random_file";
+        char *filepath = "/Users/tienloc47/random_file";
     //    char *filepath = "/Volumes/Time Machine/Movies/An.Edu.DVDSCR.XviD.avi";
     //    char *filepath = "/Volumes/Time Machine/Movies/City.Of.Angels.1998.DVDRip.Xvid.AC3.Magpie.avi";
-    //    char *filepath = "/Volumes/Time Machine/Movies/Dear.John.2010.720p.BluRay.AC3.x264-UNiT3D.mkv";
     //char *filepath = "/Volumes/Time Machine/Movies/Fired.Up.2009.720p.BluRay.AC3.x264-UNiT3D.mkv";
     
     ssize_t filesize = get_file_size(filepath);
     
     unsigned char *ORG_DATA = (unsigned char *) allocate(filesize);
     
-    ssize_t max = SSIZE_MAX;
-    printf("%ld \n", max);
-    
     printf("Read %ld bytes into buffer.\n", read_file_to_buffer(filepath, ORG_DATA, filesize));
     
     
     // Initializes counts array to store the number of each character
-    int *counts = (int *) allocate(sizeof(int)*256); 
-    memset(counts, 0, sizeof(int)*256);
+    int *dispatch_counts = (int *) allocate(sizeof(int)*256);
+    int *counts = (int *) allocate(sizeof(int)*256);
+    memset(counts, 0, sizeof(int)*256); // zero out every single byte
+    memset(dispatch_counts, 0, sizeof(int)*256); // zero out every single byte
+
+#define NUM_BLOCKS 10
+    size_t NUM_BYTE_PER_BLOCK = filesize / NUM_BLOCKS;
     
+    // Create serial queue to access counts
+    dispatch_queue_t counts_Squeue = dispatch_queue_create("counts", NULL);
+    
+    // Get global queue
+    dispatch_queue_t global = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    dispatch_group_t group = dispatch_group_create();
+    
+    size_t upper_bound, lower_bound;
+    lower_bound = 0;
+    for ( int i = 1; i <= NUM_BLOCKS ; i++ ) {
+        upper_bound = NUM_BYTE_PER_BLOCK * i;
+                
+        dispatch_group_async(group, global, ^{
+            int *local_counts = (int *) allocate(sizeof(int)*256);
+            memset(local_counts, 0, sizeof(int)*256);
+            unsigned char c;
+            for ( size_t j = lower_bound; j < upper_bound ; j++ ) {
+                c = ORG_DATA[j];
+                ++local_counts[c];
+            }
+            // Update local data to global count array
+            dispatch_sync(counts_Squeue, ^{
+                for ( int k = 0 ; k < 256 ; k++ )
+                    dispatch_counts[k] += local_counts[k];
+                free(local_counts);
+            });
+        });
+        lower_bound = upper_bound;
+    }
+    
+    dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    dispatch_release(group);
+    dispatch_release(counts_Squeue);
     
     // Counts the number of each char in file
     unsigned char c;
@@ -303,6 +338,11 @@ int main (int argc, const char * argv[])
         ++counts[c];
     }
     
+    for ( int i = 0 ; i < 256 ; i++ ) {
+        if ( counts[i] != dispatch_counts[i] )
+            printf("%d: counts: %d, dispatchcounts: %d\n",i, counts[i], dispatch_counts[i]);
+    }
+ 
     Heap_Node *node = create_huffman_code_tree(counts);
     
     // Initialize a stack to keep track of where we are in the tree
