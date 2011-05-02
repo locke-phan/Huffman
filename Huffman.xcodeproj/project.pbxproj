@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		44AA4B10136E3C210032B573 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 44AA4B0F136E3C210032B573 /* main.c */; };
+		44AA4B18136E3C440032B573 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 44AA4B17136E3C440032B573 /* CoreFoundation.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -26,6 +27,7 @@
 		44AA4B0B136E3C210032B573 /* Huffman */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Huffman; sourceTree = BUILT_PRODUCTS_DIR; };
 		44AA4B0F136E3C210032B573 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		44AA4B11136E3C210032B573 /* Huffman.1 */ = {isa = PBXFileReference; lastKnownFileType = text.man; path = Huffman.1; sourceTree = "<group>"; };
+		44AA4B17136E3C440032B573 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +35,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				44AA4B18136E3C440032B573 /* CoreFoundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -42,6 +45,7 @@
 		44AA4B00136E3C210032B573 = {
 			isa = PBXGroup;
 			children = (
+				44AA4B17136E3C440032B573 /* CoreFoundation.framework */,
 				44AA4B0E136E3C210032B573 /* Huffman */,
 				44AA4B0C136E3C210032B573 /* Products */,
 			);
