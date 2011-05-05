@@ -18,7 +18,7 @@
 void * allocate ( size_t size ) {
     void *space = malloc(size);
     if ( space == NULL ) {
-        fprintf(stderr, "Error allocating memory.\n");
+        perror("Can't malloc");
         exit(EXIT_FAILURE);
     }
     return space;
@@ -196,7 +196,7 @@ void encode (unsigned char *data, unsigned char *encodedData, size_t ord_data_si
     size_t result_position = 0;
     size_t bit_position = 7;
     
-    for ( int i = 0 ; i < ord_data_size ; i++ ) {
+    for ( size_t i = 0 ; i < ord_data_size ; i++ ) {
         unsigned char c = data[i];
         
         char *code = code_word[c];
@@ -227,7 +227,7 @@ void decode (Heap_Node *root, unsigned char *decoded_data, unsigned char *encode
     size_t decode_data_index = 0;
     size_t num_encoded_bytes = maxbits / 8;
     
-    for ( int i = 0 ; i < num_encoded_bytes ; i++ ) {
+    for ( int i = 0 ; i <= num_encoded_bytes ; i++ ) {
         byte = encoded_data[i];
         
         for ( int j = 7 ; j >= 0 && totalbits < maxbits ; j--, totalbits++ ) {
@@ -258,69 +258,68 @@ ssize_t get_file_size ( char *path ) {
 ssize_t read_file_to_buffer ( char *path, void *buffer, size_t filesize ) {
     int fd;
     if ((fd = open(path, O_RDONLY)) < 0) {
-        perror("Read file");
+        perror("Can't open file");
         exit(EXIT_FAILURE);
     }
     
     ssize_t bytes_read;
     if ((bytes_read = read(fd, buffer, filesize)) < 0) {
-        perror("Can't read.");
+        perror("Can't read read");
         exit(EXIT_FAILURE);
     }
     close(fd);
     return bytes_read;
 }
 
-int main (int argc, const char * argv[])
-{
-    //   char *filepath = "/Users/tienloc47/test.txt";
-    //    char *filepath = "/Users/tienloc47/sample_large_text_file.txt";
-    //    char *filepath = "/Users/tienloc47/movie.avi";
-        char *filepath = "/Users/tienloc47/random_file";
-    //    char *filepath = "/Volumes/Time Machine/Movies/An.Edu.DVDSCR.XviD.avi";
-    //    char *filepath = "/Volumes/Time Machine/Movies/City.Of.Angels.1998.DVDRip.Xvid.AC3.Magpie.avi";
-    //char *filepath = "/Volumes/Time Machine/Movies/Fired.Up.2009.720p.BluRay.AC3.x264-UNiT3D.mkv";
-    
-    ssize_t filesize = get_file_size(filepath);
-    
-    unsigned char *ORG_DATA = (unsigned char *) allocate(filesize);
-    
-    printf("Read %ld bytes into buffer.\n", read_file_to_buffer(filepath, ORG_DATA, filesize));
-    
-    
-    // Initializes counts array to store the number of each character
-    int *dispatch_counts = (int *) allocate(sizeof(int)*256);
-    int *counts = (int *) allocate(sizeof(int)*256);
-    memset(counts, 0, sizeof(int)*256); // zero out every single byte
-    memset(dispatch_counts, 0, sizeof(int)*256); // zero out every single byte
+/*******************************************************************
+  Counts all the occurences of each char (or byte) using GCD.
+ Parameters: 
+    array : pointer to the array that will be updated with counts
+            array is expected to have 1024 bytes in size
+    data  : pointer to the data that will be counted
+    data_size : size of the data in bytes
+********************************************************************/
+void count_dispatch ( int* array , unsigned char *data , size_t data_size ) {
+    // Zero out every single byte
+    memset(array, 0, sizeof(int)*256); 
 
-#define NUM_BLOCKS 10
-    size_t NUM_BYTE_PER_BLOCK = filesize / NUM_BLOCKS;
+    size_t NUM_BLOCKS = 1;
+    for ( size_t i = 2 ; i <= 10 ; i++ ) { 
+        if ( data_size % i == 0 ) {
+            NUM_BLOCKS = i;
+            break;
+        }
+    }
+
+    size_t NUM_BYTE_PER_BLOCK = data_size / NUM_BLOCKS;
     
-    // Create serial queue to access counts
-    dispatch_queue_t counts_Squeue = dispatch_queue_create("counts", NULL);
+    // Create serial queue to access array
+    dispatch_queue_t counts_Squeue = dispatch_queue_create("array", NULL);
     
     // Get global queue
     dispatch_queue_t global = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_group_t group = dispatch_group_create();
     
+    clock_t time1 = clock();
+    
     size_t upper_bound, lower_bound;
     lower_bound = 0;
-    for ( int i = 1; i <= NUM_BLOCKS ; i++ ) {
+    printf("Number of bytes per block: %ld. Block num: %ld.\n", NUM_BYTE_PER_BLOCK, NUM_BLOCKS);
+    for ( size_t i = 1; i <= NUM_BLOCKS ; i++ ) {
         upper_bound = NUM_BYTE_PER_BLOCK * i;
-                
+        //printf("lower: %ld, upper: %ld.\n", lower_bound, upper_bound);
         dispatch_group_async(group, global, ^{
             int *local_counts = (int *) allocate(sizeof(int)*256);
             memset(local_counts, 0, sizeof(int)*256);
             unsigned char c;
             for ( size_t j = lower_bound; j < upper_bound ; j++ ) {
-                c = ORG_DATA[j];
+                c = data[j];
                 ++local_counts[c];
             }
             // Update local data to global count array
             dispatch_sync(counts_Squeue, ^{
                 for ( int k = 0 ; k < 256 ; k++ )
-                    dispatch_counts[k] += local_counts[k];
+                    array[k] += local_counts[k];
                 free(local_counts);
             });
         });
@@ -328,21 +327,55 @@ int main (int argc, const char * argv[])
     }
     
     dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    
+    clock_t time2 = clock();
+    
     dispatch_release(group);
     dispatch_release(counts_Squeue);
     
-    // Counts the number of each char in file
+    printf("Counting took %.4lf seconds using GCD.\n", (time2-time1)/(double)CLOCKS_PER_SEC);
+}
+
+int main (int argc, const char * argv[])
+{
+    //   char *filepath = "/Users/tienloc47/test.txt";
+       char *filepath = "/Users/tienloc47/7meg.txt";
+    //    char *filepath = "/Users/tienloc47/sample_large_text_file.txt";
+    //    char *filepath = "/Users/tienloc47/movie.avi";
+    //    char *filepath = "/Users/tienloc47/random_file";
+#define DEBUGGING 0
+    
+    ssize_t filesize = get_file_size(filepath);
+    printf("File size: %ld.\n", filesize);
+    unsigned char *ORG_DATA = (unsigned char *) allocate(filesize);
+    printf("Read %ld bytes into buffer.\n", read_file_to_buffer(filepath, ORG_DATA, filesize));
+    
+    // Initializes counts array to store the number of each character
+    int *dispatch_counts = (int *) allocate(sizeof(int)*256);
+    int *counts = (int *) allocate(sizeof(int)*256);
+    memset(counts, 0, sizeof(int)*256); // zero out every single byte
+    
+    // Counts the occurences of each byte using GCD
+    count_dispatch(dispatch_counts, ORG_DATA, filesize);
+    
+    // Counts the occurences of each byte using a simple loop
+    clock_t time1 = clock();
     unsigned char c;
     for ( int i = 0; i < filesize ; i++ ) {
         c = ORG_DATA[i];
         ++counts[c];
     }
+    clock_t time2 = clock();
+    
+    printf("Counting took %.4lf seconds using traditional looping.\n", (time2-time1)/(double)CLOCKS_PER_SEC);
+
     
     for ( int i = 0 ; i < 256 ; i++ ) {
         if ( counts[i] != dispatch_counts[i] )
             printf("%d: counts: %d, dispatchcounts: %d\n",i, counts[i], dispatch_counts[i]);
     }
- 
+    
+    
     Heap_Node *node = create_huffman_code_tree(counts);
     
     // Initialize a stack to keep track of where we are in the tree
@@ -354,7 +387,9 @@ int main (int argc, const char * argv[])
     // Traverse through the tree to collect our codewords
     walk(stack, node);
     
-    
+    // Loop over 256 bytes to count the length of each code word
+    // and then sum them up to multiply with the count of each byte
+    // to get the compressed size 
     size_t total_compressed_numbits = 0;
     for (int i = 0; i < 256 ; i++ ) {
         char *string = code_word[i];
@@ -367,27 +402,134 @@ int main (int argc, const char * argv[])
     printf("Size of file: %lu bytes.\n", node->count);
     printf("Size after compression: %lu bytes.\n", total_compressed_numbits/8);
     
-    size_t compressed_byte_size;
-    if (total_compressed_numbits % 8 == 0) {
-        compressed_byte_size = total_compressed_numbits / 8;
-    } else {
-        compressed_byte_size = (total_compressed_numbits / 8) + 1;
-    }
+    size_t compressed_byte_size = total_compressed_numbits / 8;
     
     unsigned char *compressed_data = (unsigned char *) allocate(compressed_byte_size);
-    memset(compressed_data, 0, compressed_byte_size);
-    printf("Start encoding process...\n");
-    encode(ORG_DATA, compressed_data, filesize);
-    
     unsigned char *decoded_data = (unsigned char *) allocate(filesize);
-    printf("Start decoding process...\n");
-    decode(node, decoded_data, compressed_data, total_compressed_numbits);
+    memset(compressed_data, 0, compressed_byte_size);
     
+#define SEQUENTIAL 1
+#if SEQUENTIAL
+    clock_t time3 = clock();
+    printf("Start encoding process...\n");
+    time1 = clock();
+    encode(ORG_DATA, compressed_data, filesize);
+    time2 = clock();
+    printf("Finished encoding. Took: %.4lf seconds.\n", (time2-time1)/(double)CLOCKS_PER_SEC);
+    printf("Start decoding process...\n");
+    time1 = clock();
+    decode(node, decoded_data, compressed_data, total_compressed_numbits);
+    time2 = clock();
+    printf("Finished decoding. Took: %.4lf seconds.\n", (time2-time1)/(double)CLOCKS_PER_SEC);
+    clock_t time4 = clock();
+    printf("Sequential encode/decode took %.4lf seconds.\n", (time4-time3)/(double)CLOCKS_PER_SEC );
+    
+    printf("Comparing decoded data with original data...\n");
     for ( int i = 0; i < filesize ; i++ ) {
         if ( ORG_DATA[i] != decoded_data[i] )
-            printf("index: %d ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
+            printf("Error! byte number: %d. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
     }
+#endif
     
+#define PRODUCER_CONSUMER 1
+#if SEQUENTIAL && PRODUCER_CONSUMER
+    memset(compressed_data, 0, compressed_byte_size);
+    memset(decoded_data, 0, filesize);
+#endif
+#if PRODUCER_CONSUMER
+    time1 = clock();
+#if DEBUGGING
+    __block size_t debug_sem = 0;
+#endif
+    dispatch_semaphore_t en_de_sem = dispatch_semaphore_create(0);
+    dispatch_queue_t compressed_data_queue = dispatch_queue_create("compressed.data.access.queue", NULL);
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        __block unsigned char byte = 0;
+        __block size_t result_position = 0;
+        __block size_t bit_position = 7;
+        
+         void (^update_compress_data) (void) = ^{
+#if DEBUGGING
+             printf("Writing 1 byte to buffer. Byte: %d.\n", byte);
+#endif
+             compressed_data[result_position] = byte; 
+         };
+        
+        for ( size_t i = 0 ; i < filesize ; i++ ) {
+            unsigned char c = ORG_DATA[i];
+            char *code = code_word[c];
+            size_t code_length = strlen(code);
+            for ( int j = 0 ; j < code_length ; j++ ) {
+                if ( code[j] == '1' ) 
+                    byte |= ( 1 << bit_position );
+                if ( bit_position == 0 ) {
+                    // Yo! I got 1 byte ready for ya
+                    dispatch_sync(compressed_data_queue, update_compress_data);
+                    // Increment the semaphore and signal
+                    dispatch_semaphore_signal(en_de_sem);
+#if DEBUGGING
+                    debug_sem++;
+#endif
+                    result_position++;
+                    bit_position = 7;
+                    byte = 0;
+                    continue;
+                }
+                bit_position--;
+            }
+        }
+        if ( byte != 0 ) {
+            dispatch_sync(compressed_data_queue, update_compress_data);
+            dispatch_semaphore_signal(en_de_sem);
+#if DEBUGGING
+            debug_sem++;
+#endif
+        }
+#if DEBUGGING
+        printf("I'm done encoding data! Sem: %ld.\n", debug_sem);
+#endif
+    });
+    
+    __block unsigned char byte;
+    Heap_Node *current = node;
+    size_t totalbits = 0;
+    size_t decode_data_index = 0;
+    size_t num_encoded_bytes = total_compressed_numbits / 8;
+        
+    for ( int i = 0 ; i <= num_encoded_bytes ; i++ ) {
+        dispatch_semaphore_wait(en_de_sem, DISPATCH_TIME_FOREVER);
+        dispatch_sync(compressed_data_queue, ^{ 
+            byte = compressed_data[i]; 
+#if DEBUGGING                
+            printf("Read 1 byte from buffer. Read: %d.\n", byte);
+#endif
+        });
+        
+        for ( int j = 7 ; j >= 0 && totalbits < total_compressed_numbits ; j--, totalbits++ ) {
+            if ( byte & ( 1 << j ))
+                current = current->right;
+            else
+                current = current->left;
+            if ( current->character_number >= 0 ) {
+                decoded_data[decode_data_index] = current->character_number;
+                current = node;
+                decode_data_index++;
+            }
+        }
+        if (decode_data_index == filesize)
+            break;
+    }
+    dispatch_release(compressed_data_queue);
+    dispatch_release(en_de_sem);
+    time2 = clock();
+    printf("Pro-Con encode/decode took %.4lf seconds.\n", (time2-time1)/(double)CLOCKS_PER_SEC);
+    
+    printf("Comparing decoded data with original data...\n");
+    for ( int i = 0; i < filesize ; i++ ) {
+        if ( ORG_DATA[i] != decoded_data[i] )
+            printf("Error! byte number: %d. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
+    }
+#endif    
     
     // Release encode array
     for ( int i = 0 ; i < 256 ; i++ )
