@@ -623,13 +623,16 @@ int main (int argc, const char * argv[])
     }
     if (!error)
         printf("Finished verifying.\n");
+    else
+        printf("Error!");
+    
+    dispatch_release(compressed_data_queue);
+    dispatch_release(en_de_sem);
 #endif    
     
     // Release encode array
     for ( int i = 0 ; i < 256 ; i++ )
         free(code_word[i]);
-    dispatch_release(compressed_data_queue);
-    dispatch_release(en_de_sem);
     free(sequential_counts);
     free(dispatch_counts);
     free_huffman_code_tree(node);
