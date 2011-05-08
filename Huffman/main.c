@@ -26,14 +26,18 @@ void * allocate ( size_t size ) {
     return space;
 }
 
+void release ( void * data ) {
+    free(data);
+}
+
 static char *code_word[256];
+static size_t code_word_length[256];
 
 struct Heap_Node {
     size_t              count;  
     int                 character_number;
     struct Heap_Node    *left;
     struct Heap_Node    *right;
-    struct Heap_Node    *parent;
 };
 typedef struct Heap_Node Heap_Node;
 
@@ -94,7 +98,7 @@ void stack_pop ( struct custom_stack_t *stack ) {
         stack->current          = stack->current->previous;
         stack->current->next    = NULL;
     }
-    free(popped_Node);
+    release(popped_Node);
     popped_Node = NULL; // just to be safe
     stack->count--;
 }
@@ -105,7 +109,7 @@ void stack_pop ( struct custom_stack_t *stack ) {
  Parameters:
  stack: pointer to the stack
 *************************************************************/
-char * stack_print ( struct custom_stack_t *stack ) {
+char * stack_print ( const struct custom_stack_t *stack ) {
     char *string = (char *) allocate(stack->count + 1);
     
     Stack_Node *p = stack->head;
@@ -124,11 +128,14 @@ char * stack_print ( struct custom_stack_t *stack ) {
  stack: pointer to a stack used to keep track of our code word
  root: pointer to the root node of a Huffman Code tree
 **************************************************************/
-void walk ( struct custom_stack_t *stack, Heap_Node *root ) {
+void walk ( struct custom_stack_t *stack, const Heap_Node *root ) {
     if ( root == NULL ) return;
     if ( root->character_number >= 0 ) {
         char *myString = stack_print(stack);
         code_word[root->character_number] = myString;
+        size_t length = strlen(myString);
+        assert(1 <= length && length <= 8 && "Must be between 1 and 8 bits");
+        code_word_length[root->character_number] = length;
     } else {
         stack_push(stack, '0');
         walk(stack, root->left);
@@ -162,7 +169,7 @@ CFComparisonResult compare ( const void *ptr1, const void *ptr2, void *info ) {
  counts: pointer to an array of ints that describes the
  distribution of 256 bytes on a particular data set
 **************************************************************/
-Heap_Node * create_huffman_code_tree ( int *counts ) {
+Heap_Node * create_huffman_code_tree ( const int *counts ) {
     // Initializes binary heap to be used as a priority queue
     CFBinaryHeapCallBacks myCallBacks;
     myCallBacks.compare = compare;
@@ -181,7 +188,6 @@ Heap_Node * create_huffman_code_tree ( int *counts ) {
             heap_node->character_number = i;
             heap_node->left             = NULL;
             heap_node->right            = NULL;
-            heap_node->parent           = NULL;
             
             CFBinaryHeapAddValue(heap, heap_node);
         }
@@ -198,9 +204,7 @@ Heap_Node * create_huffman_code_tree ( int *counts ) {
         CFBinaryHeapRemoveMinimumValue(heap);
         
         node->left = x;
-        x->parent = node;
         node->right = y;
-        y->parent = node;
         node->character_number = -1;
         node->count = x->count + y->count;
         
@@ -223,7 +227,7 @@ Heap_Node * create_huffman_code_tree ( int *counts ) {
 void free_huffman_code_tree ( Heap_Node *node ) {
     Heap_Node *left = node->left;
     Heap_Node *right = node->right;
-    free(node);
+    release(node);
     
     if ( left != NULL )
         free_huffman_code_tree(left);
@@ -240,7 +244,7 @@ void free_huffman_code_tree ( Heap_Node *node ) {
  encodedData: compressed data
  org_data_size: size of the original data (in bytes)
 **************************************************************/
-void encode (unsigned char *data, unsigned char *encodedData, size_t org_data_size) {
+void encode (const unsigned char *data, unsigned char *encodedData, size_t org_data_size) {
     unsigned char byte = 0;
     size_t result_position = 0;
     size_t bit_position = 7;
@@ -250,7 +254,7 @@ void encode (unsigned char *data, unsigned char *encodedData, size_t org_data_si
         
         char *code = code_word[c];
         
-        size_t code_length = strlen(code);
+        size_t code_length = code_word_length[c];
         for ( int j = 0 ; j < code_length ; j++ ) {
             if ( code[j] == '1' ) 
                 byte |= ( 1 << bit_position );
@@ -279,14 +283,14 @@ void encode (unsigned char *data, unsigned char *encodedData, size_t org_data_si
  encoded_data: pointer to an array of encoded bytes
  maxbits: number of bits encoded
 **********************************************************/
-void decode (Heap_Node *root, unsigned char *decoded_data, unsigned char *encoded_data, size_t maxbits ) {    
+void decode (Heap_Node *root, unsigned char *decoded_data, const unsigned char *encoded_data, size_t maxbits ) {    
     unsigned char byte;
     Heap_Node *current = root;
     size_t totalbits = 0;
     size_t decode_data_index = 0;
     size_t num_encoded_bytes = maxbits / 8;
     
-    for ( int i = 0 ; i <= num_encoded_bytes ; i++ ) {
+    for ( size_t i = 0 ; i <= num_encoded_bytes ; i++ ) {
         byte = encoded_data[i];
         
         for ( int j = 7 ; j >= 0 && totalbits < maxbits ; j--, totalbits++ ) {
@@ -309,7 +313,7 @@ void decode (Heap_Node *root, unsigned char *decoded_data, unsigned char *encode
  Parameters:
  path: path to the file
 ******************************************************/
-ssize_t get_file_size ( char *path ) {
+ssize_t get_file_size ( const char *path ) {
     struct stat buffer;
     int error;
     if ( (error = stat(path, &buffer)) < 0) {
@@ -330,7 +334,7 @@ ssize_t get_file_size ( char *path ) {
  buffer: a pointer to the buffer (expect to have 'filesize'
  number of bytes)
 ********************************************************/
-ssize_t read_file_to_buffer ( char *path, void *buffer, size_t filesize ) {
+ssize_t read_file_to_buffer ( const char *path, void *buffer, size_t filesize ) {
     int fd;
     if ((fd = open(path, O_RDONLY)) < 0) {
         perror("Can't open file");
@@ -355,7 +359,7 @@ ssize_t read_file_to_buffer ( char *path, void *buffer, size_t filesize ) {
     data  : pointer to the data that will be counted
     data_size : size of the data in bytes
 ********************************************************************/
-void count_dispatch ( int* array , unsigned char *data , size_t data_size ) {
+void count_dispatch ( int* array , const unsigned char *data , size_t data_size ) {
     // Zero out every single byte
     memset(array, 0, sizeof(int)*256); 
 
@@ -384,7 +388,6 @@ void count_dispatch ( int* array , unsigned char *data , size_t data_size ) {
     printf("Number of bytes per block: %ld. Block num: %ld.\n", NUM_BYTE_PER_BLOCK, NUM_BLOCKS);
     for ( size_t i = 1; i <= NUM_BLOCKS ; i++ ) {
         upper_bound = NUM_BYTE_PER_BLOCK * i;
-        //printf("lower: %ld, upper: %ld.\n", lower_bound, upper_bound);
         dispatch_group_async(group, global, ^{
             int *local_counts = (int *) allocate(sizeof(int)*256);
             memset(local_counts, 0, sizeof(int)*256);
@@ -397,7 +400,7 @@ void count_dispatch ( int* array , unsigned char *data , size_t data_size ) {
             dispatch_sync(counts_Squeue, ^{
                 for ( int k = 0 ; k < 256 ; k++ )
                     array[k] += local_counts[k];
-                free(local_counts);
+                release(local_counts);
             });
         });
         lower_bound = upper_bound;
@@ -422,13 +425,13 @@ void count_dispatch ( int* array , unsigned char *data , size_t data_size ) {
  data  : pointer to the data that will be counted
  data_size : size of the data in bytes
 **************************************************************/
-void count_sequential ( int *array, unsigned char *data, size_t data_size ) {
+void count_sequential ( int *array, const unsigned char *data, size_t data_size ) {
     memset(array, 0, sizeof(int)*256); // zero out every single byte
     
     // Counts the occurences of each byte using a simple loop
     clock_t time1 = clock();
     unsigned char c;
-    for ( int i = 0; i < data_size ; i++ ) {
+    for ( size_t i = 0; i < data_size ; i++ ) {
         c = data[i];
         ++array[c];
     }
@@ -446,7 +449,7 @@ void count_sequential ( int *array, unsigned char *data, size_t data_size ) {
  Parameters:
  counts: pointer to an array of counts
 **********************************************/
-Heap_Node* collect_code_words ( int* counts ) {
+Heap_Node* collect_code_words ( const int* counts ) {
     Heap_Node *node = create_huffman_code_tree(counts);
     
     // Initialize a stack to keep track of where we are in the tree
@@ -496,7 +499,7 @@ int main (int argc, const char * argv[])
     for (int i = 0; i < 256 ; i++ ) {
         char *string = code_word[i];
         if (string == NULL) continue;
-        size_t len = strlen(string);
+        size_t len = code_word_length[i];
         size_t size = len * sequential_counts[i];
         total_compressed_numbits += size;
     }
@@ -558,7 +561,7 @@ int main (int argc, const char * argv[])
         for ( size_t i = 0 ; i < filesize ; i++ ) {
             unsigned char c = ORG_DATA[i];  // Get a byte 
             char *code = code_word[c];      // Get the code word for that byte
-            size_t code_length = strlen(code);
+            size_t code_length = code_word_length[c];
             for ( int j = 0 ; j < code_length ; j++ ) {
                 if ( code[j] == '1' ) 
                     byte |= ( 1 << bit_position );
@@ -590,7 +593,7 @@ int main (int argc, const char * argv[])
         size_t decode_data_index = 0;
         size_t num_encoded_bytes = total_compressed_numbits / 8;
         
-        for ( int i = 0 ; i <= num_encoded_bytes && decode_data_index < filesize ; i++ ) {
+        for ( size_t i = 0 ; i <= num_encoded_bytes && decode_data_index < filesize ; i++ ) {
             dispatch_semaphore_wait(en_de_sem, DISPATCH_TIME_FOREVER);
             dispatch_sync(compressed_data_queue, ^{ 
                 byte = compressed_data[i]; 
@@ -615,10 +618,10 @@ int main (int argc, const char * argv[])
     
     printf("Comparing decoded data with original data...\n");
     error = 0;
-    for ( int i = 0; i < filesize ; i++ ) {
+    for ( size_t i = 0; i < filesize ; i++ ) {
         if ( ORG_DATA[i] != decoded_data[i] ) {
             error = 1;
-            printf("Error! byte number: %d. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
+            printf("Error! byte number: %ld. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
         }
     }
     if (!error)
@@ -632,9 +635,9 @@ int main (int argc, const char * argv[])
     
     // Release encode array
     for ( int i = 0 ; i < 256 ; i++ )
-        free(code_word[i]);
-    free(sequential_counts);
-    free(dispatch_counts);
+        release(code_word[i]);
+    release(sequential_counts);
+    release(dispatch_counts);
     free_huffman_code_tree(node);
     
     printf("\nProgram finished executing.\n");
