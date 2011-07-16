@@ -510,7 +510,7 @@ int main (int argc, const char * argv[])
     size_t compressed_byte_size = total_compressed_numbits / 8;
     
     unsigned char *compressed_data = (unsigned char *) allocate(compressed_byte_size);
-    unsigned char *decoded_data = (unsigned char *) allocate(filesize);
+    unsigned char *decompressed_data = (unsigned char *) allocate(filesize);
     memset(compressed_data, 0, compressed_byte_size);
     
 #define SEQUENTIAL 1
@@ -518,16 +518,16 @@ int main (int argc, const char * argv[])
     printf("\nStart sequential encode/decode...\n");
     clock_t time3 = clock();
     encode(ORG_DATA, compressed_data, filesize);
-    decode(node, decoded_data, compressed_data, total_compressed_numbits);
+    decode(node, decompressed_data, compressed_data, total_compressed_numbits);
     clock_t time4 = clock();
     printf("    Sequential encode/decode took %.4lf seconds.\n", (time4-time3)/(double)CLOCKS_PER_SEC );
     
     printf("Comparing decoded data with original data...\n");
     int error = 0;
     for ( int i = 0; i < filesize ; i++ ) {
-        if ( ORG_DATA[i] != decoded_data[i] ) {
+        if ( ORG_DATA[i] != decompressed_data[i] ) {
             error = 1;
-            printf("Error! byte number: %d. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
+            printf("Error! byte number: %d. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decompressed_data[i]);
         }
     }
     if (!error)
@@ -541,7 +541,7 @@ int main (int argc, const char * argv[])
     printf("\nStart producer-consumer encode/decode...\n");
 
     memset(compressed_data, 0, compressed_byte_size);
-    memset(decoded_data, 0, filesize);
+    memset(decompressed_data, 0, filesize);
     clock_t time1 = clock();
 
     dispatch_semaphore_t en_de_sem = dispatch_semaphore_create(0);
@@ -605,7 +605,7 @@ int main (int argc, const char * argv[])
                 else
                     current = current->left;
                 if ( current->character_number >= 0 ) {
-                    decoded_data[decode_data_index] = current->character_number;
+                    decompressed_data[decode_data_index] = current->character_number;
                     current = node;
                     decode_data_index++;
                 }
@@ -619,9 +619,9 @@ int main (int argc, const char * argv[])
     printf("Comparing decoded data with original data...\n");
     error = 0;
     for ( size_t i = 0; i < filesize ; i++ ) {
-        if ( ORG_DATA[i] != decoded_data[i] ) {
+        if ( ORG_DATA[i] != decompressed_data[i] ) {
             error = 1;
-            printf("Error! byte number: %ld. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decoded_data[i]);
+            printf("Error! byte number: %ld. ORG: %d , decoded: %d \n", i, ORG_DATA[i], decompressed_data[i]);
         }
     }
     if (!error)
